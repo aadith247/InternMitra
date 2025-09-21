@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const userRepo = require('../repositories/userRepository');
+const pool = require('../config/database');
 
 // Verify JWT token
 const authenticateToken = async (req, res, next) => {
@@ -15,24 +15,29 @@ const authenticateToken = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await userRepo.findById(decoded.userId);
     
-    if (!user) {
+    // Get user from database
+    const result = await pool.query(
+      'SELECT id, email, first_name, last_name, is_active FROM students WHERE id = $1',
+      [decoded.userId]
+    );
+    
+    if (result.rows.length === 0) {
       return res.status(401).json({ 
         success: false, 
         message: 'Invalid token - user not found' 
       });
     }
 
-    if (!user.isActive) {
+    const user = result.rows[0];
+    if (!user.is_active) {
       return res.status(401).json({ 
         success: false, 
         message: 'Account is deactivated' 
       });
     }
 
-    // Backward compatibility: provide _id string for legacy routes comparing req.user._id
-    req.user = { ...user, _id: String(user.id) };
+    req.user = user;
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError') {
@@ -57,103 +62,6 @@ const authenticateToken = async (req, res, next) => {
   }
 };
 
-// Check if user is artisan
-const requireArtisan = (req, res, next) => {
-  if (req.user.role !== 'artisan') {
-    return res.status(403).json({ 
-      success: false, 
-      message: 'Access denied - Artisan role required' 
-    });
-  }
-  next();
-};
-
-// Check if user is customer
-const requireCustomer = (req, res, next) => {
-  if (req.user.role !== 'customer') {
-    return res.status(403).json({ 
-      success: false, 
-      message: 'Access denied - Customer role required' 
-    });
-  }
-  next();
-};
-
-// Check if user owns the resource
-const requireOwnership = (resourceModel, paramName = 'id') => {
-  return async (req, res, next) => {
-    try {
-      const resourceId = req.params[paramName];
-      const resource = await resourceModel.findById(resourceId);
-      
-      if (!resource) {
-        return res.status(404).json({ 
-          success: false, 
-          message: 'Resource not found' 
-        });
-      }
-
-      // Check if user owns the resource
-      const ownerField = resource.artisan ? 'artisan' : 'user';
-      if (resource[ownerField].toString() !== req.user._id.toString()) {
-        return res.status(403).json({ 
-          success: false, 
-          message: 'Access denied - You do not own this resource' 
-        });
-      }
-
-      req.resource = resource;
-      next();
-    } catch (error) {
-      console.error('Ownership check error:', error);
-      res.status(500).json({ 
-        success: false, 
-        message: 'Error checking resource ownership' 
-      });
-    }
-  };
-};
-
-// Optional authentication (doesn't fail if no token)
-const optionalAuth = async (req, res, next) => {
-  try {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (token) {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await userRepo.findById(decoded.userId);
-      
-      if (user && user.isActive) {
-        req.user = { ...user, _id: String(user.id) };
-      }
-    }
-    
-    next();
-  } catch (error) {
-    // Continue without authentication
-    next();
-  }
-};
-
-// Rate limiting for auth endpoints
-const authRateLimit = (req, res, next) => {
-  // This would be implemented with express-rate-limit
-  // For now, we'll just pass through
-  next();
-};
-
-// Check if Instagram is connected
-const requireInstagramConnection = (req, res, next) => {
-  if (!req.user.instagram.connected) {
-    return res.status(400).json({ 
-      success: false, 
-      message: 'Instagram account must be connected to perform this action' 
-    });
-  }
-  next();
-};
-
 // Generate JWT token
 const generateToken = (userId) => {
   return jwt.sign(
@@ -174,12 +82,6 @@ const generateRefreshToken = (userId) => {
 
 module.exports = {
   authenticateToken,
-  requireArtisan,
-  requireCustomer,
-  requireOwnership,
-  optionalAuth,
-  authRateLimit,
-  requireInstagramConnection,
   generateToken,
   generateRefreshToken
 };

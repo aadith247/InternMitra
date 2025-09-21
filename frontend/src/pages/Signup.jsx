@@ -1,25 +1,60 @@
-import Header from '../components/Header'
 import { useState } from 'react'
-import { useAuth } from '../lib/auth'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
+import axios from 'axios'
+import Header from '../components/Header'
+import { motion } from 'framer-motion'
 
 export default function Signup() {
-  const { register } = useAuth()
   const navigate = useNavigate()
-  const [name, setName] = useState('')
+  const location = useLocation()
+  const isEmployer = new URLSearchParams(location.search).get('role') === 'employer'
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
-  const [role, setRole] = useState('artisan')
-  const [loading, setLoading] = useState(false)
+  const [companyName, setCompanyName] = useState('')
+  const [website, setWebsite] = useState('')
+  const [contactName, setContactName] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001/api'
 
   const onSubmit = async (e) => {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      await register({ name, email, password, role })
-      navigate('/dashboard', { replace: true })
+      if (isEmployer) {
+        const { data } = await axios.post(`${API_BASE}/employer-auth/register`, {
+          companyName,
+          email,
+          password,
+          website,
+          contactName,
+          phone
+        })
+        const { token, company } = data.data || {}
+        if (token) { try { localStorage.setItem('employerToken', token) } catch {} }
+        if (company) { try { localStorage.setItem('employer', JSON.stringify(company)) } catch {} }
+        navigate('/employer')
+      } else {
+        const { data } = await axios.post(`${API_BASE}/auth/register`, {
+          email,
+          password,
+          firstName,
+          lastName,
+          phone
+        })
+        const { token, user } = data.data || {}
+        if (token) {
+          try { localStorage.setItem('token', token) } catch {}
+        }
+        if (user) {
+          try { localStorage.setItem('user', JSON.stringify(user)) } catch {}
+        }
+        navigate('/dashboard')
+      }
     } catch (err) {
       setError(err?.response?.data?.message || 'Signup failed')
     } finally {
@@ -28,37 +63,81 @@ export default function Signup() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-gray-50">
       <Header />
-      <div className="max-w-md mx-auto pt-24 p-4">
-        <h1 className="text-2xl font-bold mb-6">Create your account</h1>
-        {error && <div className="mb-4 text-red-600 text-sm">{error}</div>}
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Name</label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} required className="mt-1 w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-lime-500" placeholder="Your name" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="mt-1 w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-lime-500" placeholder="you@example.com" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Password</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="mt-1 w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-lime-500" placeholder="••••••" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Account Type</label>
-            <select value={role} onChange={(e) => setRole(e.target.value)} className="mt-1 w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-lime-500">
-              <option value="artisan">Artisan</option>
-              <option value="customer">Customer</option>
-            </select>
-          </div>
-          <button type="submit" disabled={loading} className="w-full py-2 rounded-md bg-lime-500 text-white font-medium hover:bg-lime-600 disabled:opacity-50">{loading ? 'Creating…' : 'Create account'}</button>
-          <p className="text-sm text-gray-600 text-center">Already have an account? <Link className="text-lime-600 hover:underline" to="/login">Sign in</Link></p>
-        </form>
+      <div className="flex min-h-screen items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+        <motion.div
+          className="max-w-md w-full space-y-6 bg-white p-8 rounded-lg shadow"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+        >
+          <h2 className="text-2xl font-bold text-center">{isEmployer ? 'Create your employer account' : 'Create your account'}</h2>
+          {error && <div className="text-red-600 text-sm bg-red-100 p-2 rounded">{error}</div>}
+          <form onSubmit={onSubmit} className="space-y-4">
+            {isEmployer ? (
+              <>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Company name</label>
+                  <input className="w-full border rounded p-2" value={companyName} onChange={e => setCompanyName(e.target.value)} required />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Email</label>
+                    <input type="email" className="w-full border rounded p-2" value={email} onChange={e => setEmail(e.target.value)} required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Phone (optional)</label>
+                    <input className="w-full border rounded p-2" value={phone} onChange={e => setPhone(e.target.value)} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Website (optional)</label>
+                    <input className="w-full border rounded p-2" value={website} onChange={e => setWebsite(e.target.value)} placeholder="https://yourcompany.com" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Primary contact name (optional)</label>
+                    <input className="w-full border rounded p-2" value={contactName} onChange={e => setContactName(e.target.value)} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Password</label>
+                  <input type="password" className="w-full border rounded p-2" value={password} onChange={e => setPassword(e.target.value)} required />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">First name</label>
+                    <input className="w-full border rounded p-2" value={firstName} onChange={e => setFirstName(e.target.value)} required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Last name</label>
+                    <input className="w-full border rounded p-2" value={lastName} onChange={e => setLastName(e.target.value)} required />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Email</label>
+                  <input type="email" className="w-full border rounded p-2" value={email} onChange={e => setEmail(e.target.value)} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Phone (optional)</label>
+                  <input className="w-full border rounded p-2" value={phone} onChange={e => setPhone(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Password</label>
+                  <input type="password" className="w-full border rounded p-2" value={password} onChange={e => setPassword(e.target.value)} required />
+                </div>
+              </>
+            )}
+            <button type="submit" disabled={loading} className="w-full bg-primary-600 text-white py-2 rounded">
+              {loading ? 'Creating account...' : 'Sign Up'}
+            </button>
+          </form>
+        </motion.div>
       </div>
     </div>
   )
 }
-
-

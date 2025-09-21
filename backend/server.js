@@ -1,62 +1,52 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-require('dotenv').config();
-const { pool } = require('./db');
+const morgan = require('morgan');
+require('dotenv').config()
+require('dotenv').config()
+
+function mask(v) {
+  if (!v) return '(missing)'
+  return v.slice(0, 10) + '...' + v.slice(-4)
+}
+
+console.log('[Clerk env check]',
+  'PK:', mask(process.env.CLERK_PUBLISHABLE_KEY),
+  'SK:', mask(process.env.CLERK_SECRET_KEY)
+)
 
 const app = express();
 
 // Security middleware
 app.use(helmet());
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
-}));
+app.use(cors());
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
-});
-app.use(limiter);
+// Logging
+app.use(morgan('combined'));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Postgres connection warm-up (optional)
-pool.connect()
-  .then(client => {
-    return client.query('select 1').then(() => {
-      client.release();
-      console.log('PostgreSQL pool is ready');
-    });
-  })
-  .catch(err => console.error('PostgreSQL connection error:', err));
+// Clerk auth is applied per-route via ensureClerkUser middleware
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/products', require('./routes/products'));
-app.use('/api/orders', require('./routes/orders'));
-app.use('/api/meme', require('./routes/meme'));
-app.use('/api/instagram', require('./routes/instagram'));
-app.use('/api/payments', require('./routes/payments'));
-app.use('/api/config', require('./routes/config'));
+app.use('/api/students', require('./routes/students'));
+app.use('/api/internships', require('./routes/internships'));
+app.use('/api/applications', require('./routes/applications'));
+app.use('/api/matches', require('./routes/matches'));
+app.use('/api/parsing', require('./routes/parsing'));
+app.use('/api/employer', require('./routes/employer'));
+app.use('/api/employer-auth', require('./routes/employerAuth'));
 
 // Health check endpoint
-app.get('/api/health', async (req, res) => {
-  try {
-    const dbOk = await pool.query('select 1 as ok');
-    res.json({ 
-      status: 'OK', 
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      db: dbOk.rows?.[0]?.ok === 1 ? 'up' : 'unknown'
-    });
-  } catch (e) {
-    res.status(500).json({ status: 'ERROR', message: 'DB check failed', error: e.message });
-  }
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
 });
 
 // Error handling middleware

@@ -3,33 +3,39 @@ import Landing from './pages/Landing.jsx'
 import Login from './pages/Login.jsx'
 import Signup from './pages/Signup.jsx'
 import Dashboard from './pages/Dashboard.jsx'
-import UploadProduct from './pages/UploadProduct.jsx'
-import Orders from './pages/Orders.jsx'
-import Checkout from './pages/Checkout.jsx'
-import TrackOrder from './pages/TrackOrder.jsx'
-import Analytics from './pages/Analytics.jsx'
-import { RequireAuth } from './lib/auth'
+import Profile from './pages/Profile.jsx'
+import Matches from './pages/Matches.jsx'
+import Applications from './pages/Applications.jsx'
+import InternshipDetail from './pages/InternshipDetail.jsx'
+import EngineeringForm from './pages/EngineeringForm.jsx'
+import FinanceForm from './pages/FinanceForm.jsx'
+import Internships from './pages/Internships.jsx'
+import Employer from './pages/Employer.jsx'
+import EmployerStart from './pages/EmployerStart.jsx'
 
 export default function App() {
+  const isAuthed = () => {
+    try { return Boolean(localStorage.getItem('token')) } catch { return false }
+  }
+
+  const Private = ({ children }) => (isAuthed() ? children : <Navigate to="/login" replace />)
+
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
-
-      {/* Protected routes */}
-      <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
-      <Route path="/upload" element={<RequireAuth><UploadProduct /></RequireAuth>} />
-      <Route path="/orders" element={<RequireAuth><Orders /></RequireAuth>} />
-      <Route path="/analytics" element={<RequireAuth><Analytics /></RequireAuth>} />
-
-      {/* Public customer routes */}
-      <Route path="/checkout/:productId" element={<Checkout />} />
-      <Route path="/track/:orderId" element={<TrackOrder />} />
-
+      <Route path="/dashboard" element={<Private><Dashboard /></Private>} />
+      <Route path="/profile" element={<Private><Profile /></Private>} />
+      <Route path="/matches" element={<Private><Matches /></Private>} />
+      <Route path="/applications" element={<Private><Applications /></Private>} />
+      <Route path="/internship/:id" element={<Private><InternshipDetail /></Private>} />
+      <Route path="/internships" element={<Internships />} />
+      <Route path="/form/engineering" element={<Private><EngineeringForm /></Private>} />
+      <Route path="/form/finance" element={<Private><FinanceForm /></Private>} />
+      <Route path="/employer" element={<Employer />} />
+      <Route path="/employer/start" element={<EmployerStart />} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   )
 }
-
-

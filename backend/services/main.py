@@ -12,7 +12,6 @@ import os
 from pydantic import BaseModel
 import PyPDF2
 import spacy
-from skillNer.skill_extractor_class import SkillExtractor
 import io
 import re
 from typing import List, Dict, Any, Tuple
@@ -43,13 +42,14 @@ except OSError:
     print("spaCy model not found. Please install with: python -m spacy download en_core_web_sm")
     nlp = None
 
-# Initialize SkillExtractor
+# Initialize SkillExtractor lazily to avoid optional heavy deps (IPython) on import
 try:
-    # skillNer requires additional parameters, so we'll use fallback for now
+    from skillNer.skill_extractor_class import SkillExtractor  # noqa: F401
+    # Not initializing SkillExtractor; fallback remains default unless you wire configs
     skill_extractor = None
-    print("Using fallback skill extraction (skillNer requires additional setup)")
+    print("Using fallback skill extraction (skillNer available but not initialized)")
 except Exception as e:
-    print(f"Error initializing SkillExtractor: {e}")
+    print(f"skillNer not available ({e}); using fallback skill extraction")
     skill_extractor = None
 
 class JobParseRequest(BaseModel):

@@ -32,48 +32,37 @@ async function computeAndPersistMatches(studentId, options = {}) {
     Array.isArray(studentSkills) ? studentSkills.join(' ') : ''
   ].filter(Boolean).join(' \n ');
 
-  // Get all active internships
-  const internshipsResult = await pool.query(
-    `SELECT i.*, c.name as company_name, c.logo_url as company_logo
-     FROM internships i
-     JOIN companies c ON i.company_id = c.id
-     WHERE i.is_active = true
-     ORDER BY i.created_at DESC`
-  );
+  // Get all active internships with optional social background filtering
+  let baseQuery = `
+    SELECT i.*, c.name as company_name, c.logo_url as company_logo
+    FROM internships i
+    JOIN companies c ON i.company_id = c.id
+    WHERE i.is_active = true
+  `;
+  const qParams = [];
+  let p = 0;
+
+  if (options && options.socialBackground) {
+    const bgs = String(options.socialBackground)
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(Boolean);
+    if (bgs.length === 1) {
+      p++;
+      baseQuery += ` AND LOWER(COALESCE(i.job_parsed_data->'employerRequirements'->>'residence','')) = $${p}`;
+      qParams.push(bgs[0]);
+    } else if (bgs.length > 1) {
+      p++;
+      baseQuery += ` AND LOWER(COALESCE(i.job_parsed_data->'employerRequirements'->>'residence','')) = ANY($${p}::text[])`;
+      qParams.push(bgs);
+    }
+  }
+
+  baseQuery += ' ORDER BY i.created_at DESC';
+  const internshipsResult = await pool.query(baseQuery, qParams);
   const internships = internshipsResult.rows;
 
-  // Prepare embeddings request payload (job documents)
-  const jobsPayload = internships.map((it) => ({
-    id: String(it.id),
-    text: [it.title, it.description, it.requirements].filter(Boolean).join(' \n ')
-  }));
-
-  let tfidfScoresMap = new Map();
-  try {
-    if (process.env.PARSING_SERVICE_URL && resumeText) {
-      // Try SBERT first
-      try {
-        const sbertRes = await axios.post(
-          `${process.env.PARSING_SERVICE_URL}/embeddings/sentence`,
-          { resumeText, jobs: jobsPayload },
-          { timeout: 8000 }
-        );
-        const scores = (sbertRes.data && sbertRes.data.data && sbertRes.data.data.scores) || [];
-        for (const s of scores) tfidfScoresMap.set(String(s.id), Number(s.similarity) || 0);
-      } catch (e1) {
-        // Fallback to TF-IDF
-        const tfidfRes = await axios.post(
-          `${process.env.PARSING_SERVICE_URL}/embeddings/tfidf`,
-          { resumeText, jobs: jobsPayload },
-          { timeout: 8000 }
-        );
-        const scores = (tfidfRes.data && tfidfRes.data.data && tfidfRes.data.data.scores) || [];
-        for (const s of scores) tfidfScoresMap.set(String(s.id), Number(s.similarity) || 0);
-      }
-    }
-  } catch (err) {
-    console.warn('TF-IDF service error, proceeding with heuristic only:', err.message);
-  }
+  // Per requirement: we use set-based similarity (no embeddings blending) for recommendations
 
   const matches = [];
   // Calculate match scores for each internship
@@ -89,10 +78,7 @@ async function computeAndPersistMatches(studentId, options = {}) {
       weights
     );
 
-    // Blend TF-IDF similarity with heuristic total
-    const tfidf = tfidfScoresMap.get(String(internship.id)) || 0;
-    const blended = Math.min(1, (matchScore.totalScore * 0.6) + (tfidf * 0.4));
-
+    const blended = matchScore.totalScore;
     if (blended > 0) {
       matches.push({
         ...internship,
@@ -200,7 +186,8 @@ router.get('/', authenticateToken, async (req, res) => {
       }
     }
 
-    const matches = await computeAndPersistMatches(req.user.id, { weights, persist, priority: priorityArr });
+    const socialBackground = typeof req.query.socialBackground === 'string' ? req.query.socialBackground : '';
+    const matches = await computeAndPersistMatches(req.user.id, { weights, persist, priority: priorityArr, socialBackground });
     res.json({ success: true, data: matches, count: matches.length });
   } catch (error) {
     console.error('Get matches error:', error);
@@ -268,11 +255,10 @@ async function calculateMatchScore(
   isRemote,
   weights
 ) {
-  // Normalize + canonicalize skills for strict equality
+  // Helpers
   const norm = (s) => String(s || '').trim().toLowerCase();
   const canonical = (s) => {
     const raw = norm(s);
-    // Special cases before stripping
     if (/^(c\+\+|cpp)$/.test(raw)) return 'cplusplus';
     if (/^c#$/.test(raw)) return 'csharp';
     if (/^(py|py3)$/.test(raw)) return 'python';
@@ -281,75 +267,51 @@ async function calculateMatchScore(
     if (/^js$/.test(raw)) return 'javascript';
     if (/^ts$/.test(raw)) return 'typescript';
     if (/^postgres$/.test(raw)) return 'postgresql';
-    // Remove common separators/spaces/dots/underscores/hyphens
-    const stripped = raw.replace(/[\s._-]+/g, '');
-    return stripped;
+    return raw.replace(/[\s._-]+/g, '');
   };
-  const reqCanon = (requiredSkills || []).map(canonical);
-  const studentSet = new Set((studentSkills || []).map(canonical));
-  // Return matched required skills (original strings) whose canonical form exists in student's skills
-  const matchedSkills = (requiredSkills || []).filter((req, idx) => studentSet.has(reqCanon[idx]));
+  const toSet = (arr) => new Set((arr || []).map(canonical).filter(Boolean));
+  const jaccard = (setA, setB) => {
+    const a = new Set(setA);
+    const b = new Set(setB);
+    const inter = new Set([...a].filter(x => b.has(x)));
+    const union = new Set([...a, ...b]);
+    return union.size === 0 ? 0 : inter.size / union.size;
+  };
+  const cosineFromSets = (setA, setB) => {
+    const a = new Set(setA);
+    const b = new Set(setB);
+    const inter = [...a].filter(x => b.has(x)).length;
+    const denom = Math.sqrt(a.size || 1) * Math.sqrt(b.size || 1);
+    return denom === 0 ? 0 : inter / denom;
+  };
 
-  const skillMatch = requiredSkills && requiredSkills.length > 0 
-    ? matchedSkills.length / requiredSkills.length 
-    : 0;
+  // Skills similarity: max(Jaccard, Cosine) over canonicalized sets
+  const setStudentSkills = toSet(studentSkills);
+  const setReqSkills = toSet(requiredSkills);
+  const jSkill = jaccard(setStudentSkills, setReqSkills);
+  const cSkill = cosineFromSets(setStudentSkills, setReqSkills);
+  const skillMatch = Math.max(jSkill, cSkill);
+  const matchedSkills = (requiredSkills || []).filter(s => setStudentSkills.has(canonical(s)));
 
-  // Location match with distance scoring (fallback to heuristics)
+  // Location similarity: Jaccard between tokenized preferred locations and internship location tokens
   let locationMatch = 0;
-  const cityCoords = {
-    'san francisco': [37.7749, -122.4194],
-    'new york': [40.7128, -74.0060],
-    'london': [51.5074, -0.1278],
-    'singapore': [1.3521, 103.8198],
-    'bengaluru': [12.9716, 77.5946],
-    'bangalore': [12.9716, 77.5946],
-    'mumbai': [19.0760, 72.8777],
-    'delhi': [28.6139, 77.2090],
-    'hyderabad': [17.3850, 78.4867],
-    'chennai': [13.0827, 80.2707],
-    'pune': [18.5204, 73.8567],
-    'kolkata': [22.5726, 88.3639]
-  };
-  // haversine and scoring now imported from utils/geo
-  function parseLocs(locs) {
-    if (!locs) return [];
-    if (Array.isArray(locs)) return locs.map(v => String(v || '').trim().toLowerCase()).filter(Boolean);
-    return String(locs)
-      .split(/[,/]|\n|\||;/)
-      .map(v => v.trim().toLowerCase())
-      .filter(Boolean);
-  }
-  async function scoreBetween(aLoc, internshipLoc) {
-    const a = cityCoords[aLoc] || await getCoords(aLoc);
-    const b = cityCoords[internshipLoc] || await getCoords(internshipLoc);
-    if (a && b) {
-      const km = haversineKm(a, b);
-      return scoreByDistance(km);
-    }
-    if (aLoc === internshipLoc) return 1;
-    if (aLoc.includes(internshipLoc) || internshipLoc.includes(aLoc)) return 0.7;
-    if (aLoc.includes('remote') || internshipLoc.includes('remote')) return 0.5;
-    return 0;
-  }
   if (isRemote) {
-    locationMatch = 1; // Remote is universally accessible
-  } else if (studentLocationPreference && internshipLocation) {
-    const internshipLoc = String(internshipLocation || '').trim().toLowerCase();
-    const studentLocs = parseLocs(studentLocationPreference);
-    // pick the best (max) score across all preferred locations
-    let best = 0;
-    for (const sLoc of studentLocs) {
-      if (sLoc === internshipLoc) { best = 1; break; }
-      const sc = await scoreBetween(sLoc, internshipLoc);
-      best = Math.max(best, sc);
-    }
-    locationMatch = best;
+    locationMatch = 1;
+  } else {
+    const parseLocs = (locs) => {
+      if (!locs) return [];
+      if (Array.isArray(locs)) return locs.map(norm).filter(Boolean);
+      return String(locs).split(/[,/\n|;]+/).map(norm).filter(Boolean);
+    };
+    const studentLocSet = new Set(parseLocs(studentLocationPreference));
+    const internshipLocSet = new Set(parseLocs(internshipLocation));
+    locationMatch = jaccard(studentLocSet, internshipLocSet);
   }
 
-  // Sector match
-  const sectorMatch = studentSectorPreference && internshipSector
-    ? studentSectorPreference.toLowerCase() === internshipSector.toLowerCase() ? 1 : 0
-    : 0;
+  // Sector similarity: Jaccard over singleton sets
+  const secA = new Set([norm(studentSectorPreference)] .filter(Boolean));
+  const secB = new Set([norm(internshipSector)] .filter(Boolean));
+  const sectorMatch = jaccard(secA, secB);
 
   // Calculate total weighted score according to provided weights
   const w = weights || { skills: 0.6, location: 0.2, sector: 0.2 };

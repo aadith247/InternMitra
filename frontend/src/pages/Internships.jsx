@@ -15,6 +15,7 @@ export default function Internships() {
   const [remote, setRemote] = useState(false)
   const [minDuration, setMinDuration] = useState('')
   const [stipendMin, setStipendMin] = useState('')
+  const [socialBackground, setSocialBackground] = useState('')
   const [page, setPage] = useState(0)
   const LIMIT = 20
   const navigate = useNavigate()
@@ -36,6 +37,7 @@ export default function Internships() {
           remote: remote || undefined,
           minDuration: minDuration || undefined,
           stipendMin: stipendMin || undefined,
+          socialBackground: socialBackground || undefined,
           limit: LIMIT,
           offset: page * LIMIT
         }
@@ -57,7 +59,7 @@ export default function Internships() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-cream-50 pt-24">
         <Header />
         <div className="flex items-center justify-center h-96">
           <div className="text-center">
@@ -70,7 +72,7 @@ export default function Internships() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-cream-50 pt-24">
       <Header />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <motion.div 
@@ -100,6 +102,11 @@ export default function Internships() {
               <option>Environmental</option>
               <option>Marketing</option>
               <option>Other</option>
+            </select>
+            <select className="border rounded p-2" value={socialBackground} onChange={e => setSocialBackground(e.target.value)}>
+              <option value="">All Backgrounds</option>
+              <option value="Rural">Rural</option>
+              <option value="Urban">Urban</option>
             </select>
             <div className="flex items-center gap-2">
               <input id="remote" type="checkbox" className="h-4 w-4" checked={remote} onChange={e => setRemote(e.target.checked)} />

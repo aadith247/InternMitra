@@ -8,6 +8,7 @@ except Exception as _e:
     print(f"SBERT not available ({_e}); will fallback to TF-IDF endpoint")
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+import os
 from pydantic import BaseModel
 import PyPDF2
 import spacy
@@ -20,10 +21,16 @@ import uvicorn
 
 app = FastAPI(title="Resume and Job Parsing Service", version="1.0.0")
 
-# CORS middleware
+# CORS middleware (configurable via env var CORS_ORIGINS as comma-separated list)
+_cors_env = os.getenv("CORS_ORIGINS", "")
+_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+# Sensible defaults for local dev if not provided
+if not _origins:
+    _origins = ["http://localhost:3000", "http://localhost:5000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5000"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

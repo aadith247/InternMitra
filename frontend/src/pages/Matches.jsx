@@ -20,6 +20,7 @@ export default function Matches() {
   const [loading, setLoading] = useState(false)
   const [applying, setApplying] = useState(null)
   const [priority, setPriority] = useState({ first: '', second: '', third: '' })
+  const [socialBackground, setSocialBackground] = useState('')
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -38,6 +39,7 @@ export default function Matches() {
       const order = [priority.first, priority.second, priority.third].filter(Boolean)
       const params = {}
       if (order.length === 3) params.priority = order.join(',')
+      if (socialBackground) params.socialBackground = socialBackground
       const { data } = await api.get('/matches', { params })
       const items = Array.isArray(data.data) ? data.data : []
       // If no custom priority was specified, sort by blended score on client
@@ -80,7 +82,7 @@ export default function Matches() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-cream-50 pt-24">
         <Header />
         <div className="flex items-center justify-center h-96">
           <div className="text-center">
@@ -93,7 +95,7 @@ export default function Matches() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-cream-50 pt-24">
       <Header />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -164,9 +166,21 @@ export default function Matches() {
                 ))}
               </select>
             </div>
+            <div className="flex-1">
+              <label className="block text-sm text-gray-700 mb-1">Social Background</label>
+              <select
+                className="w-full border rounded p-2"
+                value={socialBackground}
+                onChange={(e) => setSocialBackground(e.target.value)}
+              >
+                <option value="">All Backgrounds</option>
+                <option value="Rural">Rural</option>
+                <option value="Urban">Urban</option>
+              </select>
+            </div>
             <div className="flex items-end gap-2">
               <Button onClick={() => { setLoading(true); loadMatches() }}>Apply</Button>
-              <Button variant="outline" onClick={() => { setPriority({ first: '', second: '', third: '' }); setLoading(true); loadMatches() }}>Reset</Button>
+              <Button variant="outline" onClick={() => { setPriority({ first: '', second: '', third: '' }); setSocialBackground(''); setLoading(true); loadMatches() }}>Reset</Button>
             </div>
           </div>
         </motion.div>
@@ -233,6 +247,18 @@ export default function Matches() {
                         <div className="flex items-center gap-1">
                           <IndianRupee className="w-4 h-4" />
                           ₹{match.stipend_amount}
+                        </div>
+                      )}
+                      {Array.isArray(match.preferred_social_backgrounds) && match.preferred_social_backgrounds.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          {match.preferred_social_backgrounds.map((bg, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700"
+                            >
+                              {bg}
+                            </span>
+                          ))}
                         </div>
                       )}
                     </div>

@@ -44,16 +44,32 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-cream-50 pt-24">
       <Header />
-      <div className="flex min-h-screen items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <motion.div
           className="max-w-md w-full space-y-8 bg-white p-8 rounded-lg shadow"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8 }}
         >
-          <h2 className="text-2xl font-bold text-center">{isEmployer ? 'Employer sign in' : 'Sign in'}</h2>
+          <div className="flex flex-col items-center gap-3">
+            <h2 className="text-2xl font-bold text-center">{isEmployer ? 'Company Login' : 'Student Login'}</h2>
+            <div className="inline-flex items-center rounded-lg border border-gray-200 overflow-hidden">
+              <button
+                onClick={() => navigate('/login')}
+                className={`px-4 py-2 text-sm ${!isEmployer ? 'bg-primary-600 text-white' : 'bg-white text-gray-700'}`}
+              >
+                Student
+              </button>
+              <button
+                onClick={() => navigate('/login?role=employer')}
+                className={`px-4 py-2 text-sm ${isEmployer ? 'bg-primary-600 text-white' : 'bg-white text-gray-700'}`}
+              >
+                Company
+              </button>
+            </div>
+          </div>
           {error && <div className="text-red-600 text-sm bg-red-100 p-2 rounded">{error}</div>}
           <form onSubmit={onSubmit} className="space-y-4">
             <div>
@@ -68,6 +84,15 @@ export default function Login() {
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
+          <div className="text-sm text-center text-gray-600">
+            Not registered with us?{' '}
+            <button
+              className="text-primary-600 hover:underline"
+              onClick={() => navigate(isEmployer ? '/signup?role=employer' : '/signup')}
+            >
+              Register now
+            </button>
+          </div>
         </motion.div>
       </div>
     </div>

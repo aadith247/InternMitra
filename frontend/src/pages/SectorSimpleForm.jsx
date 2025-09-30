@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { Button } from '../components/ui/button'
 
@@ -14,6 +14,31 @@ export default function SectorSimpleForm({ sector = 'other', embedded }) {
   })
 
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001/api'
+
+  // Preload previously saved sector data from student profile
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const jwt = localStorage.getItem('token')
+        const headers = jwt ? { Authorization: `Bearer ${jwt}` } : {}
+        const { data } = await axios.get(`${API_BASE}/students/profile`, { headers })
+        const existing = data?.data?.resume_parsed_data || null
+        if (existing) {
+          setForm(prev => ({
+            ...prev,
+            ...existing,
+            experience: Array.isArray(existing.experience) && existing.experience.length ? existing.experience : prev.experience,
+            skills: Array.isArray(existing.skills) ? existing.skills : prev.skills,
+            summary: existing.summary || prev.summary,
+            tools: existing.tools || prev.tools,
+            newSkill: ''
+          }))
+        }
+      } catch {}
+    }
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sector])
 
   const addSkill = () => {
     const s = (form.newSkill || '').trim()

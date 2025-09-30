@@ -4,16 +4,24 @@ const pool = require('../config/database');
 const axios = require('axios');
 
 const router = express.Router();
+
+// Disable caching for employer routes to avoid stale 304 responses
+router.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
 const { getCoords, haversineKm, scoreByDistance } = require('../utils/geo');
 
-// Helper: simple match score (same logic shape as matches.js)
+// Helper: set-based match score (align with student-side logic)
 function normalize(s) { return String(s || '').trim().toLowerCase(); }
 async function calcMatch(student, internship) {
   const studentSkills = Array.isArray(student.skills) ? student.skills : [];
   const studentSector = student.sector_preference || null;
   const studentLocation = student.location_preference || null;
   const reqSkills = Array.isArray(internship.required_skills) ? internship.required_skills : [];
-  // skill match: exact equality after canonicalization (strip separators)
+
   const canonical = (s) => {
     const raw = normalize(s);
     if (/^(c\+\+|cpp)$/.test(raw)) return 'cplusplus';
@@ -26,59 +34,50 @@ async function calcMatch(student, internship) {
     if (/^postgres$/.test(raw)) return 'postgresql';
     return raw.replace(/[\s._-]+/g, '');
   };
-  const reqCanon = reqSkills.map(canonical);
-  const studentSet = new Set(studentSkills.map(canonical));
-  const matchedSkills = reqSkills.filter((req, idx) => studentSet.has(reqCanon[idx]));
-  const skillMatch = reqSkills.length > 0 ? matchedSkills.length / reqSkills.length : 0;
-  // location match with distance scoring
-  let locationMatch = 0;
-  const cityCoords = {
-    'san francisco': [37.7749, -122.4194],
-    'new york': [40.7128, -74.0060],
-    'london': [51.5074, -0.1278],
-    'singapore': [1.3521, 103.8198],
-    'bengaluru': [12.9716, 77.5946],
-    'bangalore': [12.9716, 77.5946],
-    'mumbai': [19.0760, 72.8777],
-    'delhi': [28.6139, 77.2090],
-    'hyderabad': [17.3850, 78.4867],
-    'chennai': [13.0827, 80.2707],
-    'pune': [18.5204, 73.8567],
-    'kolkata': [22.5726, 88.3639]
+  const toSet = (arr) => new Set((arr || []).map(canonical).filter(Boolean));
+  const jaccard = (setA, setB) => {
+    const a = new Set(setA);
+    const b = new Set(setB);
+    const inter = new Set([...a].filter(x => b.has(x)));
+    const union = new Set([...a, ...b]);
+    return union.size === 0 ? 0 : inter.size / union.size;
   };
-  // haversine and scoring imported from utils/geo
-  function parseLocs(locs) {
+  const cosineFromSets = (setA, setB) => {
+    const a = new Set(setA);
+    const b = new Set(setB);
+    const inter = [...a].filter(x => b.has(x)).length;
+    const denom = Math.sqrt(a.size || 1) * Math.sqrt(b.size || 1);
+    return denom === 0 ? 0 : inter / denom;
+  };
+
+  // Skills similarity: max(Jaccard, Cosine)
+  const setStudentSkills = toSet(studentSkills);
+  const setReqSkills = toSet(reqSkills);
+  const jSkill = jaccard(setStudentSkills, setReqSkills);
+  const cSkill = cosineFromSets(setStudentSkills, setReqSkills);
+  const skillMatch = Math.max(jSkill, cSkill);
+  const matchedSkills = reqSkills.filter(s => setStudentSkills.has(canonical(s)));
+
+  // Location similarity: Jaccard over tokenized locations
+  const parseLocs = (locs) => {
     if (!locs) return [];
-    if (Array.isArray(locs)) return locs.map(v => String(v || '').trim().toLowerCase()).filter(Boolean);
-    return String(locs).split(/[,/]|\n|\||;/).map(v => v.trim().toLowerCase()).filter(Boolean);
-  }
-  async function scoreBetween(aLoc, bLoc) {
-    const a = cityCoords[aLoc] || await getCoords(aLoc);
-    const b = cityCoords[bLoc] || await getCoords(bLoc);
-    if (a && b) {
-      const km = haversineKm(a, b);
-      return scoreByDistance(km);
-    }
-    if (aLoc === bLoc) return 1;
-    if (aLoc.includes(bLoc) || bLoc.includes(aLoc)) return 0.7;
-    if (aLoc.includes('remote') || bLoc.includes('remote')) return 0.5;
-    return 0;
-  }
+    if (Array.isArray(locs)) return locs.map(normalize).filter(Boolean);
+    return String(locs).split(/[\n,|/;]+/).map(normalize).filter(Boolean);
+  };
+  let locationMatch = 0;
   if (internship.is_remote) {
     locationMatch = 1;
-  } else if (studentLocation && internship.location) {
-    const bLoc = normalize(internship.location);
-    const aLocs = parseLocs(studentLocation);
-    let best = 0;
-    for (const aLoc of aLocs) {
-      if (aLoc === bLoc) { best = 1; break; }
-      const sc = await scoreBetween(aLoc, bLoc);
-      best = Math.max(best, sc);
-    }
-    locationMatch = best;
+  } else {
+    const studentLocSet = new Set(parseLocs(studentLocation));
+    const internshipLocSet = new Set(parseLocs(internship.location));
+    locationMatch = jaccard(studentLocSet, internshipLocSet);
   }
-  // sector match
-  const sectorMatch = (studentSector && internship.sector) ? (normalize(studentSector) === normalize(internship.sector) ? 1 : 0) : 0;
+
+  // Sector similarity: Jaccard over singleton sets
+  const secA = new Set([normalize(studentSector)].filter(Boolean));
+  const secB = new Set([normalize(internship.sector)].filter(Boolean));
+  const sectorMatch = jaccard(secA, secB);
+
   const total = (skillMatch * 0.6) + (locationMatch * 0.2) + (sectorMatch * 0.2);
   return {
     skillMatch: Math.round(skillMatch * 100) / 100,
@@ -191,7 +190,7 @@ router.post('/internships', [
     if (!errors.isEmpty()) return res.status(400).json({ success: false, message: 'Validation failed', errors: errors.array() });
     const {
       companyId, title, description, requirements, sector, location,
-      durationWeeks, stipendAmount, stipendCurrency = 'USD', isRemote = false, applicationDeadline,
+      /* durationWeeks, stipendAmount, stipendCurrency = 'USD', */ isRemote = false, applicationDeadline,
       genderRequirement, residenceRequirement, socialRequirement,
       requiredSkills
     } = req.body;
@@ -256,6 +255,11 @@ router.post('/internships', [
       social: socialRequirement
     };
 
+    // Enforce fixed stipend and duration so company cannot change them
+    const FIXED_DURATION_WEEKS = 52; // 12 months
+    const FIXED_STIPEND_AMOUNT = 4000;
+    const FIXED_CURRENCY = 'INR';
+
     const result = await pool.query(
       `INSERT INTO internships 
        (company_id, title, description, requirements, required_skills, sector, location,
@@ -263,7 +267,7 @@ router.post('/internships', [
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,true)
        RETURNING *`,
       [companyId, title, description, requirements, extractedSkills, sector, location,
-       durationWeeks || null, stipendAmount || null, stipendCurrency, !!isRemote, applicationDeadline || null, parsedData]
+       FIXED_DURATION_WEEKS, FIXED_STIPEND_AMOUNT, FIXED_CURRENCY, !!isRemote, applicationDeadline || null, parsedData]
     );
 
     return res.status(201).json({ success: true, message: 'Internship created', data: result.rows[0] });
@@ -343,9 +347,17 @@ router.get('/internships/:id/matches', async (req, res) => {
 router.get('/internships/:id/applicants', async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Load internship for scoring context
+    const ir = await pool.query(`SELECT * FROM internships WHERE id = $1 AND is_active = true`, [id]);
+    if (ir.rows.length === 0) return res.status(404).json({ success: false, message: 'Internship not found' });
+    const internship = ir.rows[0];
+
+    // Load applicants + basic profile
     const result = await pool.query(
       `SELECT a.*, s.first_name, s.last_name, s.email,
-              sp.skills, sp.sector_preference, sp.location_preference
+              sp.skills, sp.sector_preference, sp.location_preference, sp.bio,
+              sp.linkedin_url, sp.github_url, sp.resume_parsed_data
        FROM applications a
        JOIN students s ON a.student_id = s.id
        LEFT JOIN student_profiles sp ON sp.student_id = s.id
@@ -353,10 +365,73 @@ router.get('/internships/:id/applicants', async (req, res) => {
        ORDER BY a.applied_at DESC`,
       [id]
     );
-    return res.json({ success: true, data: result.rows });
+
+    // Decorate with diversity + match scores
+    const rows = await Promise.all((result.rows || []).map(async r => {
+      let gender = null, residence = null, social = null;
+      try {
+        const cat = (r.resume_parsed_data && r.resume_parsed_data.profileCategory) || {};
+        gender = cat.gender || null;
+        residence = cat.residenceType || null;
+        social = cat.socialBg || null;
+      } catch (_) {}
+
+      // calc match
+      let ms = { skillMatch: 0, locationMatch: 0, sectorMatch: 0, totalScore: 0, matchedSkills: [] };
+      try {
+        ms = await calcMatch({
+          skills: r.skills || [],
+          sector_preference: r.sector_preference,
+          location_preference: r.location_preference
+        }, internship);
+      } catch (_) {}
+
+      return {
+        ...r,
+        diversity: { gender, residence, social },
+        matchScore: ms.totalScore,
+        skillMatch: ms.skillMatch,
+        locationMatch: ms.locationMatch,
+        sectorMatch: ms.sectorMatch,
+        matchedSkills: ms.matchedSkills
+      }
+    }));
+
+    return res.json({ success: true, data: rows });
   } catch (e) {
     console.error('Employer internship applicants error:', e);
     return res.status(500).json({ success: false, message: 'Failed to fetch applicants' });
+  }
+});
+
+// Employer view of a student's profile (basic details + resume_parsed_data)
+router.get('/students/:studentId/profile', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const result = await pool.query(
+      `SELECT s.id, s.first_name, s.last_name, s.email,
+              sp.sector_preference, sp.location_preference, sp.skills, sp.bio,
+              sp.linkedin_url, sp.github_url, sp.resume_parsed_data
+       FROM students s
+       LEFT JOIN student_profiles sp ON sp.student_id = s.id
+       WHERE s.id = $1`,
+      [studentId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Student not found' });
+
+    const r = result.rows[0];
+    let gender = null, residence = null, social = null;
+    try {
+      const cat = (r.resume_parsed_data && r.resume_parsed_data.profileCategory) || {};
+      gender = cat.gender || null;
+      residence = cat.residenceType || null;
+      social = cat.socialBg || null;
+    } catch (_) {}
+
+    return res.json({ success: true, data: { ...r, diversity: { gender, residence, social } } });
+  } catch (e) {
+    console.error('Employer view student profile error:', e);
+    return res.status(500).json({ success: false, message: 'Failed to fetch student profile' });
   }
 });
 

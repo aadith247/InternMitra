@@ -6,7 +6,7 @@ import { Button } from '../components/ui/button'
 
 export default function EmployerStart() {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-cream-50">
       <Header />
       <section className="pt-24 pb-16">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">

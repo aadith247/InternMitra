@@ -6,10 +6,10 @@ import { Briefcase, Target, Zap, Users, TrendingUp, CheckCircle } from 'lucide-r
 export default function Landing() {
   const authed = (() => { try { return Boolean(localStorage.getItem('token')) } catch { return false } })()
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-cream-50">
       <Header />
       {/* Hero section */}
-      <section className="pt-24 pb-16 lg:pt-32 lg:pb-24">
+      <section className="pt-24 pb-16 lg:pt-32 lg:pb-24 bg-gradient-to-b from-cream-50 to-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div 
             className="text-center max-w-4xl mx-auto"
@@ -39,40 +39,51 @@ export default function Landing() {
             </motion.p>
 
             <motion.div 
-              className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16"
+              className="flex flex-col gap-3 items-stretch sm:flex-row sm:justify-center sm:items-center sm:flex-wrap mb-16"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4, duration: 0.8 }}
             >
-              <Link to="/signup">
-                <motion.button
-                  className="px-8 py-4 bg-primary-600 text-white font-semibold rounded-lg text-lg shadow-sm hover:bg-primary-700 transition-all duration-200 group"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <span className="flex items-center gap-2">
-                    Get Started Free
-                    <motion.svg 
-                      className="w-5 h-5 group-hover:translate-x-1 transition-transform"
-                      fill="none" 
-                      stroke="currentColor" 
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                    </motion.svg>
-                  </span>
-                </motion.button>
-              </Link>
-              
-              <Link to="/login">
-                <motion.button
-                  className="px-8 py-4 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg text-lg hover:border-gray-400 hover:bg-gray-50 transition-all duration-200"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  Sign In
-                </motion.button>
-              </Link>
+              <div className="flex gap-3">
+                <Link to="/login/student">
+                  <motion.button
+                    className="px-6 py-3 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:border-gray-400 hover:bg-gray-50 transition-all duration-200"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    Student Login
+                  </motion.button>
+                </Link>
+                <Link to="/login/company">
+                  <motion.button
+                    className="px-6 py-3 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:border-gray-400 hover:bg-gray-50 transition-all duration-200"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    Company Login
+                  </motion.button>
+                </Link>
+              </div>
+              <div className="flex gap-3">
+                <Link to="/signup/student">
+                  <motion.button
+                    className="px-6 py-3 bg-primary-600 text-white font-semibold rounded-lg shadow-sm hover:bg-primary-700 transition-all duration-200"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    Register as Student
+                  </motion.button>
+                </Link>
+                <Link to="/signup/company">
+                  <motion.button
+                    className="px-6 py-3 bg-primary-50 text-primary-700 border border-primary-200 font-semibold rounded-lg hover:bg-primary-100 transition-all duration-200"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    Register as Company
+                  </motion.button>
+                </Link>
+              </div>
             </motion.div>
 
             {/* Features */}
@@ -84,24 +95,24 @@ export default function Landing() {
             >
               {[
                 { 
-                  icon: <Target className="w-8 h-8 text-primary-600" />, 
+                  icon: <Target className="w-8 h-8 text-lavender-500" />, 
                   title: "Smart Matching", 
                   desc: "AI-powered algorithm matches your skills with the perfect internship opportunities" 
                 },
                 { 
-                  icon: <Zap className="w-8 h-8 text-primary-600" />, 
+                  icon: <Zap className="w-8 h-8 text-mint-500" />, 
                   title: "Instant Results", 
                   desc: "Upload your resume and get matched with relevant internships in seconds" 
                 },
                 { 
-                  icon: <TrendingUp className="w-8 h-8 text-primary-600" />, 
+                  icon: <TrendingUp className="w-8 h-8 text-peach-500" />, 
                   title: "Career Growth", 
                   desc: "Find internships that align with your career goals and growth trajectory" 
                 }
               ].map((feature, index) => (
                 <motion.div
                   key={index}
-                  className="bg-gray-50 rounded-xl p-8 border border-gray-100 hover:border-gray-200 transition-all duration-300 group"
+                  className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 group"
                   whileHover={{ y: -2 }}
                   whileTap={{ scale: 0.98 }}
                 >
@@ -116,7 +127,7 @@ export default function Landing() {
       </section>
 
       {/* Employer section */}
-      <section className="py-16 bg-gray-50 border-t border-gray-100">
+      <section className="py-16 bg-gradient-to-b from-lavender-50 to-cream-50 border-t border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
             <motion.div
@@ -159,7 +170,7 @@ export default function Landing() {
               transition={{ delay: 0.2, duration: 0.7 }}
               className="order-1 lg:order-2"
             >
-              <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+              <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
                 <div className="flex items-center gap-3 mb-4">
                   <Briefcase className="w-6 h-6 text-primary-600" />
                   <h3 className="text-xl font-semibold text-gray-900">Employer Panel Highlights</h3>
@@ -184,7 +195,7 @@ export default function Landing() {
       </section>
 
       {/* How it works section */}
-      <section className="py-16 bg-gray-50">
+      <section className="py-16 bg-gradient-to-b from-white to-cream-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold text-gray-900 mb-4">How It Works</h2>
@@ -216,7 +227,7 @@ export default function Landing() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.2, duration: 0.8 }}
               >
-                <div className="w-16 h-16 bg-primary-600 text-white rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-6">
+                <div className="w-16 h-16 bg-lavender-500 text-white rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-6">
                   {step.step}
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 mb-4">{step.title}</h3>
@@ -228,7 +239,7 @@ export default function Landing() {
       </section>
 
       {/* CTA section */}
-      <section className="py-16">
+      <section className="py-16 bg-gradient-to-b from-cream-50 to-white">
         <div className="max-w-4xl mx-auto text-center px-4 sm:px-6 lg:px-8">
           <h2 className="text-3xl font-bold text-gray-900 mb-4">Ready to Find Your Perfect Match?</h2>
           <p className="text-xl text-gray-600 mb-8">
@@ -236,7 +247,7 @@ export default function Landing() {
           </p>
           <Link to="/signup">
             <motion.button
-              className="px-8 py-4 bg-primary-600 text-white font-semibold rounded-lg text-lg shadow-sm hover:bg-primary-700 transition-all duration-200"
+              className="px-8 py-4 bg-primary-600 text-white font-semibold rounded-xl text-lg shadow-sm hover:bg-primary-700 transition-all duration-200"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >

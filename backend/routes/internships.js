@@ -11,7 +11,7 @@ const router = express.Router();
 // @access  Public
 router.get('/', async (req, res) => {
   try {
-    const { sector, location, search, limit = 20, offset = 0, remote, minDuration, stipendMin } = req.query;
+    const { sector, location, search, limit = 20, offset = 0, remote, minDuration, stipendMin, socialBackground } = req.query;
     
     let query = `
       SELECT i.*, c.name as company_name, c.description as company_description, 
@@ -34,6 +34,23 @@ router.get('/', async (req, res) => {
       paramCount++;
       query += ` AND (i.location ILIKE $${paramCount} OR i.is_remote = true)`;
       queryParams.push(`%${location}%`);
+    }
+
+    if (socialBackground) {
+      const backgrounds = String(socialBackground)
+        .split(',')
+        .map(s => s.trim().toLowerCase())
+        .filter(Boolean);
+      if (backgrounds.length === 1) {
+        paramCount++;
+        // Filter using residence requirement stored in job_parsed_data -> employerRequirements -> residence
+        query += ` AND LOWER(COALESCE(i.job_parsed_data->'employerRequirements'->>'residence','')) = $${paramCount}`;
+        queryParams.push(backgrounds[0]);
+      } else if (backgrounds.length > 1) {
+        paramCount++;
+        query += ` AND LOWER(COALESCE(i.job_parsed_data->'employerRequirements'->>'residence','')) = ANY($${paramCount}::text[])`;
+        queryParams.push(backgrounds);
+      }
     }
 
     if (search) {
@@ -165,11 +182,9 @@ router.post('/', authenticateToken, [
       sector,
       location,
       companyId,
-      durationWeeks,
-      stipendAmount,
-      stipendCurrency = 'USD',
       isRemote = false,
-      applicationDeadline
+      applicationDeadline,
+      preferredSocialBackgrounds
     } = req.body;
 
     // Parse job requirements to extract skills
@@ -182,15 +197,20 @@ router.post('/', authenticateToken, [
     const extractedSkills = parsedData.skills || [];
 
     // Create internship
+    // Enforce fixed stipend and duration
+    const FIXED_DURATION_WEEKS = 52; // 12 months
+    const FIXED_STIPEND_AMOUNT = 4000;
+    const FIXED_CURRENCY = 'INR';
+
     const result = await pool.query(
       `INSERT INTO internships 
        (company_id, title, description, requirements, required_skills, sector, location, 
-        duration_weeks, stipend_amount, stipend_currency, is_remote, application_deadline, job_parsed_data)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        duration_weeks, stipend_amount, stipend_currency, is_remote, application_deadline, job_parsed_data, preferred_social_backgrounds)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
       [
         companyId, title, description, requirements, extractedSkills, sector, location,
-        durationWeeks, stipendAmount, stipendCurrency, isRemote, applicationDeadline, parsedData
+        FIXED_DURATION_WEEKS, FIXED_STIPEND_AMOUNT, FIXED_CURRENCY, isRemote, applicationDeadline, parsedData, Array.isArray(preferredSocialBackgrounds) ? preferredSocialBackgrounds : (preferredSocialBackgrounds ? [preferredSocialBackgrounds] : null)
       ]
     );
 
@@ -296,7 +316,8 @@ router.post('/public', [
 
     const {
       title, description, requirements, sector, location,
-      companyId, durationWeeks, stipendAmount, stipendCurrency = 'USD', isRemote = false, applicationDeadline
+      companyId, isRemote = false, applicationDeadline,
+      preferredSocialBackgrounds
     } = req.body;
 
     // If no companyId provided, create or reuse a default demo company (without relying on unique constraints)
@@ -333,15 +354,20 @@ router.post('/public', [
       console.warn('Public job parse failed, continuing without parsed skills:', e.message);
     }
 
+    // Enforce fixed stipend and duration
+    const FIXED_DURATION_WEEKS = 52; // 12 months
+    const FIXED_STIPEND_AMOUNT = 4000;
+    const FIXED_CURRENCY = 'INR';
+
     const result = await pool.query(
       `INSERT INTO internships 
        (company_id, title, description, requirements, required_skills, sector, location, 
-        duration_weeks, stipend_amount, stipend_currency, is_remote, application_deadline, job_parsed_data, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, true)
+        duration_weeks, stipend_amount, stipend_currency, is_remote, application_deadline, job_parsed_data, is_active, preferred_social_backgrounds)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, true, $14)
        RETURNING *`,
       [
         company_id, title, description, requirements, extractedSkills, sector, location,
-        durationWeeks || null, stipendAmount || null, stipendCurrency, !!isRemote, applicationDeadline || null, parsedData
+        FIXED_DURATION_WEEKS, FIXED_STIPEND_AMOUNT, FIXED_CURRENCY, !!isRemote, applicationDeadline || null, parsedData, Array.isArray(preferredSocialBackgrounds) ? preferredSocialBackgrounds : (preferredSocialBackgrounds ? [preferredSocialBackgrounds] : null)
       ]
     );
 

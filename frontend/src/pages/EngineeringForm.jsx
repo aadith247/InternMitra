@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Header from '../components/Header'
 import axios from 'axios'
 import { Button } from '../components/ui/button'
 
-export default function EngineeringForm() {
+export default function EngineeringForm({ embedded = false }) {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [form, setForm] = useState({
@@ -16,6 +16,34 @@ export default function EngineeringForm() {
     codingProfiles: { leetcode: '', codeforces: '', codechef: '' },
     tools: ''
   })
+
+  // Preload existing data if any
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const jwt = localStorage.getItem('token')
+        const headers = jwt ? { Authorization: `Bearer ${jwt}` } : {}
+        const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001/api'
+        const { data } = await axios.get(`${API_BASE}/students/profile`, { headers })
+        const existing = data?.data?.resume_parsed_data || null
+        if (existing) {
+          setForm(prev => ({
+            ...prev,
+            ...existing,
+            education: Array.isArray(existing.education) && existing.education.length ? existing.education : prev.education,
+            projects: Array.isArray(existing.projects) && existing.projects.length ? existing.projects : prev.projects,
+            experience: Array.isArray(existing.experience) && existing.experience.length ? existing.experience : prev.experience,
+            codingProfiles: existing.codingProfiles || prev.codingProfiles,
+            skills: Array.isArray(existing.skills) ? existing.skills : prev.skills,
+            summary: existing.summary || prev.summary,
+            tools: existing.tools || prev.tools,
+            newSkill: ''
+          }))
+        }
+      } catch {}
+    }
+    load()
+  }, [])
 
   const addSkill = () => {
     const s = (form.newSkill || '').trim()
@@ -50,13 +78,11 @@ export default function EngineeringForm() {
     }
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <h1 className="text-2xl font-bold mb-4">Engineering Profile</h1>
-        {msg && <div className="mb-4 text-sm text-green-700 bg-green-100 p-3 rounded">{msg}</div>}
-        <form onSubmit={onSubmit} className="space-y-8">
+  const content = (
+    <>
+      {!embedded && <h1 className="text-2xl font-bold mb-4">Engineering Profile</h1>}
+      {msg && <div className="mb-4 text-sm text-green-700 bg-green-100 p-3 rounded">{msg}</div>}
+      <form onSubmit={onSubmit} className="space-y-8">
           <div className="bg-white p-6 rounded border">
             <h2 className="font-semibold mb-3">Summary</h2>
             <textarea className="w-full border rounded p-2" rows={3} placeholder="Short summary" value={form.summary} onChange={e => setForm({ ...form, summary: e.target.value })} />
@@ -129,8 +155,15 @@ export default function EngineeringForm() {
           </div>
 
           <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Engineering Profile'}</Button>
-        </form>
-      </div>
+      </form>
+    </>
+  )
+
+  if (embedded) return content
+  return (
+    <div className="min-h-screen bg-cream-50 pt-24">
+      <Header />
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{content}</div>
     </div>
   )
 }
